@@ -18,9 +18,21 @@ semester2_placements = {
     "MATH222": 0.40,
     "MATH234": 0.20
 }
+#sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEFEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?output=csv"
+
+#data = pd.read_csv(sheet_url)
+# =====================================================
+# DATA LOADING NEW
+# =====================================================
+#sheets = pd.read_excel("capacity_inputs.xlsx", sheet_name=None)
+
+#course_plans = sheets["course_plans"]
+#baseline_cohorts = sheets["enrollments"]
+#courses = sheets["capacities"]
+#placements = sheets["Placements"]
 
 # =====================================================
-# DATA LOADING
+# DATA LOADING OLD
 # =====================================================
 
 def load_courses(filepath):
@@ -76,12 +88,18 @@ def load_baseline_enrollments(filepath):
 # GROWTH
 # =====================================================
 
-def apply_growth(baseline_cohorts, growth_multiplier):
+def apply_growth(baseline_cohorts, default_growth, custom_growth):
 
     growth_cohorts = {}
 
     for major, size in baseline_cohorts.items():
-        growth_cohorts[major] = int(size * growth_multiplier)
+
+        if custom_growth and major in custom_growth:
+            growth_rate = custom_growth[major] / 100
+        else:
+            growth_rate = default_growth / 100
+
+        growth_cohorts[major] = int(size * (1 + growth_rate))
 
     return growth_cohorts
 
@@ -92,7 +110,7 @@ def apply_growth(baseline_cohorts, growth_multiplier):
 
 def simulate(course_plans, courses, cohort_sizes, max_semesters):
 
-    bottlenecks = []
+    results = []
 
     # total incoming students across all majors
     total_students = sum(cohort_sizes.values())
@@ -123,16 +141,14 @@ def simulate(course_plans, courses, cohort_sizes, max_semesters):
                 enrollment = int(total_students * pct)
                 capacity = courses[course][term]
 
-                if enrollment > capacity:
-
-                    bottlenecks.append({
-                        "major": "All",
-                        "course": course,
-                        "semester_number": semester_label,
-                        "enrollment": enrollment,
-                        "capacity": capacity,
-                        "overage": enrollment - capacity
-                    })
+                results.append({
+    "major": "All",
+    "course": course,
+    "semester_number": semester_label,
+    "enrollment": enrollment,
+    "capacity": capacity,
+    "overage": enrollment - capacity
+})
 
         # =====================================================
         # SEMESTER 2 PLACEMENT COURSES
@@ -148,16 +164,14 @@ def simulate(course_plans, courses, cohort_sizes, max_semesters):
                 enrollment = int(total_students * pct)
                 capacity = courses[course][term]
 
-                if enrollment > capacity:
-
-                    bottlenecks.append({
-                        "major": "All",
-                        "course": course,
-                        "semester_number": semester_label,
-                        "enrollment": enrollment,
-                        "capacity": capacity,
-                        "overage": enrollment - capacity
-                    })
+                results.append({
+    "major": "All",
+    "course": course,
+    "semester_number": semester_label,
+    "enrollment": enrollment,
+    "capacity": capacity,
+    "overage": enrollment - capacity
+})
 
         # =====================================================
         # MAJOR-SPECIFIC COURSES
@@ -187,18 +201,16 @@ def simulate(course_plans, courses, cohort_sizes, max_semesters):
 
                 capacity = courses[course][term]
 
-                if enrollment > capacity:
+                results.append({
+    "major": major,
+    "course": course,
+    "semester_number": semester_label,
+    "enrollment": enrollment,
+    "capacity": capacity,
+    "overage": enrollment - capacity
+})
 
-                    bottlenecks.append({
-                        "major": major,
-                        "course": course,
-                        "semester_number": semester_label,
-                        "enrollment": enrollment,
-                        "capacity": capacity,
-                        "overage": enrollment - capacity
-                    })
-
-    return bottlenecks
+    return results
 
 
 # =====================================================
@@ -248,24 +260,92 @@ def generate_recommendations(scenario_results):
     return recommendations
 
 
-# =====================================================
-# STREAMLIT ENTRY FUNCTION
-# =====================================================
+def run_model(growth_percent, selected_major, max_semesters, custom_growth=None, advanced_selected_majors=None):
 
-def run_model(growth_percent, selected_major, max_semesters):
+    if advanced_selected_majors is None:
+        advanced_selected_majors = []
 
-    courses = load_courses("courses updated.csv")
-    course_plans = load_course_plan("course_plan updated.csv")
-    baseline_cohorts = load_baseline_enrollments("baseline_enrollment.csv")
+    sheets = pd.read_excel("capacity_inputs.xlsx", sheet_name=None)
 
-    growth_multiplier = 1 + (growth_percent / 100)
+    course_plans_df = sheets["course_plans"]
+    enrollments_df = sheets["enrollments"]
+    capacities_df = sheets["capacities"]
 
-    growth_cohorts = apply_growth(baseline_cohorts, growth_multiplier)
+    # ------------------------------------------
+    # Convert enrollments -> baseline cohorts
+    # ------------------------------------------
+
+    baseline_cohorts = dict(
+        zip(enrollments_df["major"], enrollments_df["baseline_enrollment"])
+    )
+
+    # ------------------------------------------
+    # Convert capacities -> courses dictionary
+    # ------------------------------------------
+
+    courses = {}
+
+    for _, row in capacities_df.iterrows():
+        courses[row["course_code"]] = {
+            "Fall": row["fall_capacity"],
+            "Spring": row["spring_capacity"]
+        }
+
+    # ------------------------------------------
+    # Convert course plans -> dictionary
+    # ------------------------------------------
+
+    course_plans = {}
+
+    for _, row in course_plans_df.iterrows():
+
+        major = row["major"]
+
+        if major not in course_plans:
+            course_plans[major] = []
+
+        course_plans[major].append({
+            "course": row["course_code"],
+            "min_semester": row["min_semester"],
+            "max_semester": row["max_semester"]
+        })
+
+    # ------------------------------------------
+    # Advanced override logic
+    # ------------------------------------------
+
+    if advanced_selected_majors:
+
+        baseline_cohorts = {
+            major: size
+            for major, size in baseline_cohorts.items()
+            if major in advanced_selected_majors
+        }
+
+        course_plans = {
+            major: plans
+            for major, plans in course_plans.items()
+            if major in advanced_selected_majors
+        }
+
+    # ------------------------------------------
+    # Apply growth
+    # ------------------------------------------
+
+    growth_cohorts = apply_growth(
+        baseline_cohorts,
+        growth_percent,
+        custom_growth
+    )
 
     growth_scenarios = {
         f"{growth_percent}% Growth": growth_cohorts,
         "No Growth": baseline_cohorts
     }
+
+    # ------------------------------------------
+    # Run simulation
+    # ------------------------------------------
 
     scenario_results = run_scenarios(
         course_plans=course_plans,
