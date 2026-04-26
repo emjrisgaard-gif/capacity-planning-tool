@@ -9,7 +9,7 @@ semester1_placements = {
     "CHEM103": 0.86,
     "CHEM109": 0.14,
     "MATH221": 0.40,
-    "MATH222": 0.21,
+ "MATH222": 0.21,
     "MATH234": 0.20
 }
 
@@ -18,28 +18,29 @@ semester2_placements = {
     "MATH222": 0.40,
     "MATH234": 0.20
 }
-#sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEFEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?output=csv"
 
-#data = pd.read_csv(sheet_url)
-# =====================================================
-# DATA LOADING NEW
-# =====================================================
-#sheets = pd.read_excel("capacity_inputs.xlsx", sheet_name=None)
-
-#course_plans = sheets["course_plans"]
-#baseline_cohorts = sheets["enrollments"]
-#courses = sheets["capacities"]
-#placements = sheets["Placements"]
 
 # =====================================================
-# DATA LOADING OLD
+# GOOGLE SHEET URLS
 # =====================================================
 
-def load_courses(filepath):
+COURSE_PLANS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=0&single=true&output=csv"
 
-    df = pd.read_csv(filepath)
+ENROLLMENTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=1260404694&single=true&output=csv"
+
+CAPACITIES_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=4062538&single=true&output=csv"
+
+PLACEMENTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=1044514389&single=true&output=csv"
+
+# =====================================================
+# LOAD FUNCTIONS (NEW)
+# =====================================================
+
+def load_courses():
+    df = pd.read_csv(CAPACITIES_URL)
 
     courses = {}
+
     for _, row in df.iterrows():
         courses[row["course_code"]] = {
             "Fall": row["fall_capacity"],
@@ -49,22 +50,20 @@ def load_courses(filepath):
     return courses
 
 
-def load_course_plan(filepath):
-
-    df = pd.read_csv(filepath)
+def load_course_plan():
+    df = pd.read_csv(COURSE_PLANS_URL)
 
     course_plans = {}
 
     for _, row in df.iterrows():
 
         major = row["major"]
-        course = row["course_code"]
 
         if major not in course_plans:
             course_plans[major] = []
 
         course_plans[major].append({
-            "course": course,
+            "course": row["course_code"],
             "min_semester": row["min_semester"],
             "max_semester": row["max_semester"]
         })
@@ -72,9 +71,8 @@ def load_course_plan(filepath):
     return course_plans
 
 
-def load_baseline_enrollments(filepath):
-
-    df = pd.read_csv(filepath)
+def load_baseline_enrollments():
+    df = pd.read_csv(ENROLLMENTS_URL)
 
     baseline_cohorts = {}
 
@@ -83,7 +81,22 @@ def load_baseline_enrollments(filepath):
 
     return baseline_cohorts
 
+def load_placements():
+    df = pd.read_csv(PLACEMENTS_URL)
 
+    semester1_placements = (
+        df[df["semester"] == 1]
+        .set_index("course_code")["percent"]
+        .to_dict()
+    )
+
+    semester2_placements = (
+        df[df["semester"] == 2]
+        .set_index("course_code")["percent"]
+        .to_dict()
+    )
+
+    return semester1_placements, semester2_placements
 # =====================================================
 # GROWTH
 # =====================================================
@@ -260,55 +273,21 @@ def generate_recommendations(scenario_results):
     return recommendations
 
 
-def run_model(growth_percent, selected_major, max_semesters, custom_growth=None, advanced_selected_majors=None):
+def run_model(growth_percent, selected_major, max_semesters,
+              custom_growth=None,
+              advanced_selected_majors=None):
 
     if advanced_selected_majors is None:
         advanced_selected_majors = []
 
-    sheets = pd.read_excel("capacity_inputs.xlsx", sheet_name=None)
-
-    course_plans_df = sheets["course_plans"]
-    enrollments_df = sheets["enrollments"]
-    capacities_df = sheets["capacities"]
-
     # ------------------------------------------
-    # Convert enrollments -> baseline cohorts
+    # LOAD DATA FROM GOOGLE SHEETS
     # ------------------------------------------
 
-    baseline_cohorts = dict(
-        zip(enrollments_df["major"], enrollments_df["baseline_enrollment"])
-    )
-
-    # ------------------------------------------
-    # Convert capacities -> courses dictionary
-    # ------------------------------------------
-
-    courses = {}
-
-    for _, row in capacities_df.iterrows():
-        courses[row["course_code"]] = {
-            "Fall": row["fall_capacity"],
-            "Spring": row["spring_capacity"]
-        }
-
-    # ------------------------------------------
-    # Convert course plans -> dictionary
-    # ------------------------------------------
-
-    course_plans = {}
-
-    for _, row in course_plans_df.iterrows():
-
-        major = row["major"]
-
-        if major not in course_plans:
-            course_plans[major] = []
-
-        course_plans[major].append({
-            "course": row["course_code"],
-            "min_semester": row["min_semester"],
-            "max_semester": row["max_semester"]
-        })
+    course_plans = load_course_plan()
+    baseline_cohorts = load_baseline_enrollments()
+    courses = load_courses()
+    semester1_placements, semester2_placements = load_placements()
 
     # ------------------------------------------
     # Advanced override logic
@@ -355,6 +334,4 @@ def run_model(growth_percent, selected_major, max_semesters, custom_growth=None,
         selected_major=selected_major
     )
 
-    recommendations = generate_recommendations(scenario_results)
-
-    return recommendations
+    return generate_recommendations(scenario_results)
