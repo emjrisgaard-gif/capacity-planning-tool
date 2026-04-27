@@ -5,21 +5,6 @@ import numpy as np
 # Placement Percentages (First-Year Courses)
 # ------------------------------------------
 
-semester1_placements = {
-    "CHEM103": 0.86,
-    "CHEM109": 0.14,
-    "MATH221": 0.40,
- "MATH222": 0.21,
-    "MATH234": 0.20
-}
-
-semester2_placements = {
-    "CHEM104": 0.86,
-    "MATH222": 0.40,
-    "MATH234": 0.20
-}
-
-
 # =====================================================
 # GOOGLE SHEET URLS
 # =====================================================
@@ -121,7 +106,7 @@ def apply_growth(baseline_cohorts, default_growth, custom_growth):
 # SIMULATION ENGINE
 # =====================================================
 
-def simulate(course_plans, courses, cohort_sizes, max_semesters):
+def simulate(course_plans, courses, cohort_sizes, max_semesters, semester1_placements, semester2_placements):
 
     results = []
 
@@ -230,7 +215,7 @@ def simulate(course_plans, courses, cohort_sizes, max_semesters):
 # SCENARIO RUNNER
 # =====================================================
 
-def run_scenarios(course_plans, courses, growth_scenarios, max_semesters, selected_major="All"):
+def run_scenarios(course_plans, courses, growth_scenarios, max_semesters, semester1_placements, semester2_placements, selected_major="All"):
 
     all_results = {}
 
@@ -251,7 +236,7 @@ def run_scenarios(course_plans, courses, growth_scenarios, max_semesters, select
             course_plans=filtered_plans,
             courses=courses,
             cohort_sizes=cohort_sizes,
-            max_semesters=max_semesters
+            max_semesters=max_semesters, semester1_placements=semester1_placements, semester2_placements=semester2_placements
         )
 
         all_results[scenario_name] = results
@@ -276,6 +261,7 @@ def generate_recommendations(scenario_results):
 def run_model(growth_percent, selected_major, max_semesters,
               custom_growth=None,
               advanced_selected_majors=None):
+    semester1_placements, semester2_placements = load_placements()
 
     if advanced_selected_majors is None:
         advanced_selected_majors = []
@@ -287,7 +273,7 @@ def run_model(growth_percent, selected_major, max_semesters,
     course_plans = load_course_plan()
     baseline_cohorts = load_baseline_enrollments()
     courses = load_courses()
-    semester1_placements, semester2_placements = load_placements()
+    semester1_placements, semester2_placemen6ts = load_placements()
 
     # ------------------------------------------
     # Advanced override logic
@@ -330,7 +316,7 @@ def run_model(growth_percent, selected_major, max_semesters,
         course_plans=course_plans,
         courses=courses,
         growth_scenarios=growth_scenarios,
-        max_semesters=max_semesters,
+        max_semesters=max_semesters, semester1_placements=semester1_placements, semester2_placements=semester2_placements,
         selected_major=selected_major
     )
 
