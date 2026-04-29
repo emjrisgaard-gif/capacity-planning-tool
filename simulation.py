@@ -82,6 +82,26 @@ def load_placements():
     )
 
     return semester1_placements, semester2_placements
+
+def load_cohorts():
+    cohorts_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=1076902910&single=true&output=csv"
+
+    df = pd.read_csv(cohorts_url)
+
+    cohorts = {}
+
+    for _, row in df.iterrows():
+
+        major = row["major"]
+        year = row["year"]
+        size = row["cohort_size"]
+
+        if major not in cohorts:
+            cohorts[major] = {}
+
+        cohorts[major][year] = size
+
+    return cohorts
 # =====================================================
 # GROWTH
 # =====================================================
@@ -101,7 +121,119 @@ def apply_growth(baseline_cohorts, default_growth, custom_growth):
 
     return growth_cohorts
 
+# =====================================================
+# ONE SEMESTER OUTLOOK
+# =====================================================
 
+def run_one_semester_outlook(selected_majors, growth_percent, term="Fall", include_noise=True):
+
+    course_plans = load_course_plan()
+    courses = load_courses()
+    cohorts = load_cohorts()
+    semester1_placements, semester2_placements = load_placements()
+
+    results = []
+
+    if selected_majors:
+        cohorts = {m: cohorts[m] for m in selected_majors if m in cohorts}
+        course_plans = {m: course_plans[m] for m in selected_majors if m in course_plans}
+
+    # -------------------------------------------------
+    # APPLY GROWTH
+    # -------------------------------------------------
+
+    for major in cohorts:
+        for year in cohorts[major]:
+
+            base = cohorts[major][year]
+            growth = base * (growth_percent / 100)
+            cohorts[major][year] = int(base + growth)
+
+    # -------------------------------------------------
+    # PLACEMENT COURSES (Freshman only)
+    # -------------------------------------------------
+
+    freshman_total = sum(
+        cohorts[major].get("Freshman", 0)
+        for major in cohorts
+    )
+
+    placement_dict = semester1_placements if term == "Fall" else semester2_placements
+
+    semester_label = f"{term} 1"
+
+    for course, pct in placement_dict.items():
+
+        if course not in courses:
+            continue
+
+        enrollment = int(freshman_total * pct)
+
+        if include_noise:
+            enrollment = max(0, int(np.random.normal(enrollment, enrollment * 0.08)))
+
+        capacity = courses[course][term]
+        if capacity == 0:
+            continue
+        results.append({
+            "major": "All",
+            "course": course,
+            "semester_number": semester_label,
+            "enrollment": enrollment,
+            "capacity": capacity,
+            "overage": enrollment - capacity
+        })
+
+    # -------------------------------------------------
+    # MAJOR COURSES
+    # -------------------------------------------------
+
+    year_map = {
+        "Freshman": 1,
+        "Sophomore": 2,
+        "Junior": 3,
+        "Senior": 4
+    }
+
+    for major, years in cohorts.items():
+
+        if major not in course_plans:
+            continue
+
+        for year_name, cohort_size in years.items():
+
+            year_num = year_map.get(year_name)
+
+            semester_label = f"{term} {year_num}"
+
+            for course_info in course_plans[major]:
+
+                course = course_info["course"]
+
+                if course not in courses:
+                    continue
+
+                if not (course_info["min_semester"] <= year_num <= course_info["max_semester"]):
+                    continue
+
+                enrollment = cohort_size
+
+                if include_noise:
+                    enrollment = max(0, int(np.random.normal(cohort_size, cohort_size * 0.08)))
+
+                capacity = courses[course][term]
+                if capacity == 0:
+                    continue
+                results.append({
+                    "major": major,
+                    "course": course,
+                    "semester_number": semester_label,
+                    "enrollment": enrollment,
+                    "capacity": capacity,
+                    "overage": enrollment - capacity
+                })
+
+    return results
 # =====================================================
 # SIMULATION ENGINE
 # =====================================================
@@ -273,7 +405,7 @@ def run_model(growth_percent, selected_major, max_semesters,
     course_plans = load_course_plan()
     baseline_cohorts = load_baseline_enrollments()
     courses = load_courses()
-    semester1_placements, semester2_placemen6ts = load_placements()
+    semester1_placements, semester2_placements = load_placements()
 
     # ------------------------------------------
     # Advanced override logic
@@ -321,3 +453,4 @@ def run_model(growth_percent, selected_major, max_semesters,
     )
 
     return generate_recommendations(scenario_results)
+
