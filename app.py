@@ -1,5 +1,6 @@
 import streamlit as st
-from simulation import run_model, run_one_semester_outlook
+from simulation import run_model, run_one_semester_outlook, load_cohort_percentages
+
 import pandas as pd
 
 # --------------------------------------------------
@@ -304,166 +305,143 @@ with tab2:
 
     majors = ["IE","BME","CHEME","CIVIL","COMPE","EE","EM","EP","ENVIRO","GEO","MSE","ME","NE"]
 
-    # ==================================================
-    # ADVANCED GROWTH OPTIONS
-    # ==================================================
-
-    st.markdown("### Advanced Growth Options")
-
-    advanced_selected_majors = []
-    custom_growth = {}
-
-    # ==================================================
-    # TERM + NOISE CONTROLS
-    # ==================================================
-
-    term_choice = st.radio(
-        "Semester",
-        ["Fall", "Spring"]
+    total_students = st.number_input(
+        "Total College of Engineering Enrollment",
+        min_value=0,
+        value=5418,
+        step=100
     )
 
-    include_noise = st.checkbox(
-        "Include enrollment uncertainty (±8%)",
-        value=True
-    )
+    cohort_df = load_cohort_percentages()
 
-    st.write("#### Select majors and assign custom growth rates.")
-
+    default_major_totals = {}
     for major in majors:
+        pct_sum = cohort_df[cohort_df["major"] == major]["cohort_percent"].sum()
+        default_major_totals[major] = int(total_students * pct_sum)
 
-        col1, col2 = st.columns([2, 1])
+    term_choice = st.radio("Semester", ["Fall", "Spring"])
 
-        with col1:
-            default_checked = not st.session_state.get("reset_one_sem_tab2", False)
+    include_noise = st.checkbox("Include enrollment uncertainty (±8%)", value=True)
 
-            selected = st.checkbox(
-                major,
-                value=default_checked,
-                key=f"one_sem_{major}_advanced"
-            )
+    # --------------------------------------------------
+    # Reset handler
+    # --------------------------------------------------
+    if st.session_state.get("reset_tab2", False):
+        for major in majors:
+            st.session_state[f"tab2_{major}_selected"] = True
+            st.session_state[f"override_{major}"] = default_major_totals.get(major, 0)
+        st.session_state["reset_tab2"] = False
 
-        if selected:
+    # --------------------------------------------------
+    # Major selection + advanced overrides
+    # --------------------------------------------------
+    st.markdown("### Major Selection & Advanced Options")
 
-            advanced_selected_majors.append(major)
+    selected_majors_tab2 = []
+    override_counts = {}
 
-            with col2:
-                default_growth = 10
+    with st.expander("Select Majors & Override Enrollment Totals"):
 
-                growth = st.number_input(
-                    f"{major} Growth %",
-                    min_value=-50,
-                    max_value=100,
-                    value=default_growth,
-                    step=1,
-                    key=f"one_sem_{major}_growth"
-                )
-
-            custom_growth[major] = growth
-
-    if st.button("Clear Advanced Options", key="clear_advanced_tab2"):
+        st.write("Check a major to include it. Optionally override its total student count.")
 
         for major in majors:
-            st.session_state[f"one_sem_{major}_advanced"] = False
-            st.session_state[f"one_sem_{major}_growth"] = 10
 
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                selected = st.checkbox(
+                    major,
+                    value=st.session_state.get(f"tab2_{major}_selected", True),
+                    key=f"tab2_{major}_selected"
+                )
+
+            if selected:
+                selected_majors_tab2.append(major)
+
+                with col2:
+                    val = st.number_input(
+                        f"{major} Total Students",
+                        min_value=0,
+                        value=st.session_state.get(f"override_{major}", default_major_totals.get(major, 0)),
+                        step=10,
+                        key=f"override_{major}"
+                    )
+                override_counts[major] = val
+
+    total_override = sum(override_counts.values())
+    if total_override != total_students:
+        st.warning(f"Selected majors sum to {total_override}, but total enrollment is {total_students}.")
+
+    if st.button("Reset to Defaults", key="reset_overrides_tab2"):
+        st.session_state["reset_tab2"] = True
         st.rerun()
 
-    # ==================================================
-    # RUN SIMULATION
-    # ==================================================
-
+    # --------------------------------------------------
+    # Run
+    # --------------------------------------------------
     if st.button("Run One Semester Outlook", type="primary"):
 
         results = run_one_semester_outlook(
-            selected_majors=advanced_selected_majors,
-            growth_percent=10,
+            total_students=total_students,
             term=term_choice,
-            include_noise=include_noise
+            include_noise=include_noise,
+            override_counts=override_counts
         )
 
         df = pd.DataFrame(results)
 
+        # filter to only selected majors (plus "All" for placement courses)
+        df = df[df["major"].isin(selected_majors_tab2 + ["All"])]
+
         bottlenecks_df = df[df["overage"] > 0].copy()
         other_classes_df = df[df["overage"] <= 0].copy()
-
-        # ==========================================
-        # ADD SEVERITY (FIX FOR YOUR ERROR)
-        # ==========================================
 
         def classify_severity(overage):
             if overage >= 50:
                 return "High"
             elif overage >= 10:
                 return "Medium"
-            else:
-                return "Low"
+            return "Low"
 
         if not bottlenecks_df.empty:
             bottlenecks_df["Severity"] = bottlenecks_df["overage"].apply(classify_severity)
 
-        # ==========================================
-        # SUMMARY TABLE
-        # ==========================================
-
         summary = (
             bottlenecks_df.groupby("major")
             .agg(
-                Total_Issues=("course","count"),
-                Worst_Overage=("overage","max"),
-                Semester=("semester_number","min")
+                Total_Issues=("course", "count"),
+                Worst_Overage=("overage", "max"),
+                Semester=("semester_number", "min")
             )
             .reset_index()
         )
 
         st.subheader("Summary by Major")
         st.dataframe(summary, use_container_width=True)
-
         st.divider()
 
-        # ==========================================
-        # BOTTLENECK TABLE (WITH COLORS FIXED)
-        # ==========================================
-
         st.subheader("Courses Over Capacity")
-
         with st.expander("View Detailed Issues", expanded=True):
-
             if not bottlenecks_df.empty:
-
                 def highlight_severity(row):
-
                     if row.get("Severity") == "High":
                         return ["background-color: #ffcccc"] * len(row)
-
                     elif row.get("Severity") == "Medium":
                         return ["background-color: #fff3cd"] * len(row)
-
                     return [""] * len(row)
-
-                styled_df = bottlenecks_df.style.apply(highlight_severity, axis=1)
-
-                st.dataframe(styled_df, use_container_width=True)
-
+                st.dataframe(
+                    bottlenecks_df.style.apply(highlight_severity, axis=1),
+                    use_container_width=True
+                )
             else:
                 st.write("No bottlenecks detected.")
 
         st.divider()
 
-        # ==========================================
-        # UNDER CAPACITY TABLE
-        # ==========================================
-
         st.subheader("Courses With Remaining Capacity")
-
         if not other_classes_df.empty:
-
             other_classes_df["remaining_capacity"] = -other_classes_df["overage"]
             other_classes_df = other_classes_df.drop(columns=["overage"])
-
-            st.dataframe(
-                other_classes_df,
-                use_container_width=True
-            )
-
+            st.dataframe(other_classes_df, use_container_width=True)
         else:
             st.write("No courses with remaining capacity.")

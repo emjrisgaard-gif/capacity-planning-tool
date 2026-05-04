@@ -83,25 +83,13 @@ def load_placements():
 
     return semester1_placements, semester2_placements
 
-def load_cohorts():
+def load_cohort_percentages():
+
     cohorts_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS2Tu2_e3veV9M0wezAX7Fytkm9Y_HjOGp6vSB8xlEEvKa58BtKAUfJmL7S_M9iOShOk2CHnq0R20bd/pub?gid=1076902910&single=true&output=csv"
 
     df = pd.read_csv(cohorts_url)
 
-    cohorts = {}
-
-    for _, row in df.iterrows():
-
-        major = row["major"]
-        year = row["year"]
-        size = row["cohort_size"]
-
-        if major not in cohorts:
-            cohorts[major] = {}
-
-        cohorts[major][year] = size
-
-    return cohorts
+    return df
 # =====================================================
 # GROWTH
 # =====================================================
@@ -124,54 +112,36 @@ def apply_growth(baseline_cohorts, default_growth, custom_growth):
 # =====================================================
 # ONE SEMESTER OUTLOOK
 # =====================================================
-
-def run_one_semester_outlook(selected_majors, growth_percent, term="Fall", include_noise=True):
+def run_one_semester_outlook(total_students, term="Fall", include_noise=True, override_counts=None):
 
     course_plans = load_course_plan()
     courses = load_courses()
-    cohorts = load_cohorts()
     semester1_placements, semester2_placements = load_placements()
 
     results = []
 
-    if selected_majors:
-        cohorts = {m: cohorts[m] for m in selected_majors if m in cohorts}
-        course_plans = {m: course_plans[m] for m in selected_majors if m in course_plans}
+    if override_counts is None:
+        override_counts = {}
 
-    # -------------------------------------------------
-    # APPLY GROWTH
-    # -------------------------------------------------
-
-    for major in cohorts:
-        for year in cohorts[major]:
-
-            base = cohorts[major][year]
-            growth = base * (growth_percent / 100)
-            cohorts[major][year] = int(base + growth)
+    year_map = {
+        "Freshman": 1,
+        "Sophomore": 2,
+        "Junior": 3,
+        "Senior": 4
+    }
 
     # -------------------------------------------------
     # PLACEMENT COURSES (Freshman only)
     # -------------------------------------------------
-
-    freshman_total = sum(
-        cohorts[major].get("Freshman", 0)
-        for major in cohorts
-    )
-
     placement_dict = semester1_placements if term == "Fall" else semester2_placements
-
     semester_label = f"{term} 1"
 
     for course, pct in placement_dict.items():
-
         if course not in courses:
             continue
-
-        enrollment = int(freshman_total * pct)
-
+        enrollment = int(total_students * pct)
         if include_noise:
             enrollment = max(0, int(np.random.normal(enrollment, enrollment * 0.08)))
-
         capacity = courses[course][term]
         if capacity == 0:
             continue
@@ -187,23 +157,25 @@ def run_one_semester_outlook(selected_majors, growth_percent, term="Fall", inclu
     # -------------------------------------------------
     # MAJOR COURSES
     # -------------------------------------------------
+    cohort_df = load_cohort_percentages()
 
-    year_map = {
-        "Freshman": 1,
-        "Sophomore": 2,
-        "Junior": 3,
-        "Senior": 4
-    }
-
-    for major, years in cohorts.items():
+    for major, major_total in override_counts.items():
 
         if major not in course_plans:
             continue
 
-        for year_name, cohort_size in years.items():
+        major_rows = cohort_df[cohort_df["major"] == major]
 
-            year_num = year_map.get(year_name)
+        for _, row in major_rows.iterrows():
 
+            year_name = row["year"]
+            year_pct  = row["cohort_percent"]
+            year_num  = year_map.get(year_name)
+
+            if year_num is None:
+                continue
+
+            cohort_size = int(total_students * year_pct)
             semester_label = f"{term} {year_num}"
 
             for course_info in course_plans[major]:
@@ -217,13 +189,13 @@ def run_one_semester_outlook(selected_majors, growth_percent, term="Fall", inclu
                     continue
 
                 enrollment = cohort_size
-
                 if include_noise:
                     enrollment = max(0, int(np.random.normal(cohort_size, cohort_size * 0.08)))
 
                 capacity = courses[course][term]
                 if capacity == 0:
                     continue
+
                 results.append({
                     "major": major,
                     "course": course,
@@ -233,8 +205,7 @@ def run_one_semester_outlook(selected_majors, growth_percent, term="Fall", inclu
                     "overage": enrollment - capacity
                 })
 
-    return results
-# =====================================================
+    return results# =====================================================
 # SIMULATION ENGINE
 # =====================================================
 
