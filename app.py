@@ -50,7 +50,7 @@ with tab1:
 
     selected_major = st.selectbox(
         "Select Major",
-        ["All", "BME", "CHEME", "CIVIL", "COMPE", "EE", "EM", "EMA", "EP", "ENVIRO", "GEO", "IE", "MSE", "ME", "NE"]
+        ["All", "AERO", "BME", "CHEME", "CIVIL", "COMPE", "EE", "EM", "EP", "ENVIRO", "GEO", "IE", "MSE", "ME", "NE"]
     )
 
     max_semesters = st.slider(
@@ -80,7 +80,7 @@ with tab1:
 
     st.markdown("### Advanced Growth Options")
 
-    majors = ["BME", "CHEME", "CIVIL", "COMPE", "EE", "EM", "EMA", "EP", "ENVIRO", "GEO", "IE", "MSE", "ME", "NE"]
+    majors = ["AERO", "BME", "CHEME", "CIVIL", "COMPE", "EE", "EM", "EP", "ENVIRO", "GEO", "IE", "MSE", "ME", "NE"]
 
     advanced_selected_majors = []
     custom_growth = {}
@@ -303,7 +303,7 @@ with tab2:
 
     st.header("One Semester Outlook")
 
-    majors = ["BME","CHEME","CIVIL","COMPE","EE","EM","EMA","EP","ENVIRO","GEO","IE", "MSE","ME","NE"]
+    majors = ["AERO", "BME","CHEME","CIVIL","COMPE","EE","EM","EP","ENVIRO","GEO","IE", "MSE","ME","NE"]
 
     total_students = st.number_input(
         "Total College of Engineering Enrollment",
