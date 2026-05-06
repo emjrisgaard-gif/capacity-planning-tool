@@ -321,7 +321,6 @@ with tab2:
 
     term_choice = st.radio("Semester", ["Fall", "Spring"])
 
-    include_noise = st.checkbox("Include enrollment uncertainty (±8%)", value=True)
 
     # --------------------------------------------------
     # Reset handler
@@ -384,7 +383,6 @@ with tab2:
         results = run_one_semester_outlook(
             total_students=total_students,
             term=term_choice,
-            include_noise=include_noise,
             override_counts=override_counts
         )
 
